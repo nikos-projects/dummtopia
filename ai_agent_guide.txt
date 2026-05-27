@@ -1,0 +1,617 @@
+================================================================================
+  DUMMTOPIA HEADLESS — COMPLETE AGENT GUIDE
+  For AI agents operating dummtopia_headless.py autonomously
+================================================================================
+
+SCRIPT:  python3 dummtopia_headless.py [flags]
+SAVE:    ~/.dummtopia_headless_save.json  (auto-managed, do not edit manually)
+OUTPUT:  Always JSON on stdout. "ok": true = success, "ok": false = error.
+EXIT:    0 on success, 1 on error.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 1 — GAME OVERVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You are a nasal spray dealer in a world where nasal spray is illegal.
+The goal is to make money by buying spray, setting prices, selling to customers,
+leveling up, and surviving mafia loans and police inspections.
+
+Core loop:
+  1. Buy spray stock  (--buy)
+  2. Set your sell prices  (--set-price)
+  3. Sell to customers  (--sell or --serve)
+  4. Level up when you have enough money  (--upgrade)
+  5. Expand customer base and unlock better stock at higher levels
+
+There is no "turn" system. Game state is real-time: the mafia loan deadline
+is a real clock, and in-game days pass based on real elapsed time.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 2 — FIRST-TIME SETUP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before anything else, initialize the game:
+
+  python3 dummtopia_headless.py --init --character Philipp --name MyDealer
+
+Characters:
+  Philipp — Better at selling to male customers (+25% selling_power).
+             Bonus vs stingy customers (WTP < 4): +15%.
+             Low WTP-raise chance (5%). Moderate police-skip win bonus (8%).
+             Best if your customer pool is mostly male.
+
+  Joseph  — Better at selling to female customers (+30% charisma).
+             Slightly worse vs stingy customers (-5%).
+             High WTP-raise chance (20%). Better at winning new customers (15%).
+             Best for charm-based long-term customer building.
+
+After --init you start with:
+  Balance:   €50.00
+  Inventory: 2x normal spray
+  Level:     1
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 3 — READING GAME STATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  python3 dummtopia_headless.py --status
+    Full snapshot: balance, level, inventory, loan, customers, day/time, etc.
+
+  python3 dummtopia_headless.py --inventory
+    Focused view: what you have, quantities, base prices, your set prices.
+
+  python3 dummtopia_headless.py --customers
+    All available customers with their WTP (willingness to pay, 1–10),
+    gender, and whether they are won/regular/winnable.
+
+Always run --status at the start of any session to orient yourself.
+
+Key fields in --status output:
+  balance              Your current money in euros
+  level                1, 2, or 3 — gates what you can buy and do
+  inventory            List of items in hand (what you can sell right now)
+  hidden_stash         Items auto-hidden during a police inspection
+  pending_samples      Winnable customers you've sent samples to
+  won_customers        Customers you've permanently unlocked
+  unlocked_customers   Base regular customer pool (always available)
+  loan                 null if no debt, or {amount, seconds_remaining}
+  under_inspection     true if police are currently searching you
+  inspection_ends_in   Seconds until inspection ends (null if not under one)
+  police_skip_charges  Charges of "Korrupter Polizist" perk remaining
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 4 — ALL BUYABLE ITEMS (--buy)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Command format:
+  python3 dummtopia_headless.py --buy TYPE --qty N
+
+TYPE must be one of:  normal | menthol | premium | ultra
+
+┌──────────┬────────────────────────────────┬────────────┬──────────────────┐
+│  TYPE    │  NAME                          │  COST EACH │  LEVEL REQUIRED  │
+├──────────┼────────────────────────────────┼────────────┼──────────────────┤
+│  normal  │  Normales Nasenspray           │  €15       │  1 (always)      │
+│  menthol │  Menthol-Nasenspray            │  €22       │  1 (always)      │
+│  premium │  Premium Nasenspray            │  €35       │  2               │
+│  ultra   │  Ultra Nasenspray (Industrial) │  €75       │  3               │
+└──────────┴────────────────────────────────┴────────────┴──────────────────┘
+
+Examples:
+  --buy normal --qty 5        costs €75  (requires €75 in balance)
+  --buy menthol --qty 2       costs €44
+  --buy premium --qty 3       costs €105  (level 2+ only)
+  --buy ultra --qty 1         costs €75   (level 3+ only)
+
+Higher-tier sprays have a higher base price and therefore can be sold at a
+larger markup while still being attractive to high-WTP customers.
+Buying ultra at level 3 is the most profitable per unit.
+
+If you try to buy premium at level 1 or ultra at level 1/2, you get:
+  {"ok": false, "error": "Premium Nasenspray requires level 2."}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 5 — PRICING (--set-price)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  python3 dummtopia_headless.py --set-price TYPE --price VALUE
+
+Sets your permanent sell price for a spray type. Persists across sessions.
+
+The sell chance formula:
+  - If your price ≤ base_price × (1 + tolerance), chance = 95%
+  - tolerance = 0.05 + (customer_WTP / 10) × 0.5
+  - Above the threshold, chance drops by 1.5% per % over the threshold
+  - Minimum chance: 5%. Maximum: 97% (after character bonuses).
+
+In practice:
+  - A WTP-9 customer tolerates up to ~55% markup before chance falls below 95%
+  - A WTP-2 customer tolerates up to ~15% markup
+  - A WTP-5 customer tolerates up to ~30% markup
+
+The --set-price command returns sell_chances_by_wtp for WTP 2, 5, and 9 so
+you can evaluate your price before committing.
+
+Good starting prices (safe for most customers):
+  normal:   €16–€18   (base €15, ~7–20% markup)
+  menthol:  €24–€26   (base €22, ~9–18% markup)
+  premium:  €38–€42   (base €35, ~9–20% markup)
+  ultra:    €80–€90   (base €75, ~7–20% markup)
+
+For low-WTP customers (Stefan, Johnathan, Ralf, etc.) you can use
+--special-price on a per-sale basis without changing your global price.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 6 — SELLING TO CUSTOMERS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TWO WAYS TO SELL:
+
+─── A) --serve (random ticks) ───────────────────────────────────────────────
+
+  python3 dummtopia_headless.py --serve --ticks N
+
+Simulates N game ticks. Each tick resolves one event:
+  - A random customer visits and a sell attempt is made automatically
+    using your set prices (the first item in inventory is offered)
+  - OR a police check triggers if the timer is up
+
+Returns a list of events with results. Good for "just keep the game running."
+Use --ticks 10 or higher to process a burst of activity.
+
+If inventory is empty, customer visits result in "no_inventory" events (no sale).
+Always buy stock before serving.
+
+─── B) --sell --customer NAME (targeted) ────────────────────────────────────
+
+  python3 dummtopia_headless.py --sell --customer NAME
+  python3 dummtopia_headless.py --sell --customer NAME --special-price 12.0
+
+Directly attempt to sell to a specific customer. Uses the first item
+in inventory at your set price (or --special-price if given).
+
+Use --special-price for:
+  - Low-WTP customers (WTP < 4) where your global price would rarely sell
+  - Negotiating a one-off discount without permanently lowering your price
+  - Triggering the WTP-raise mechanic (if you use a special price AND the
+    sale succeeds, there's a character-based chance the customer's WTP goes up
+    permanently for future sales)
+
+Customer must be in unlocked_customers or won_customers (from --status).
+You cannot sell to winnable customers until you win them via --contact-customer.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 7 — ALL REGULAR CUSTOMERS (always unlocked)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+These 23 customers are available from the start. WTP = willingness to pay (1–10).
+Higher WTP = more tolerant of markup = easier to sell at profitable prices.
+
+┌────────────┬─────┬────────┬──────────────────────────────────────────────┐
+│  NAME      │ WTP │ GENDER │  NOTES                                       │
+├────────────┼─────┼────────┼──────────────────────────────────────────────┤
+│  Stefan    │  5  │   m    │  Reliable regular, medium tolerance          │
+│  Johnathan │  2  │   m    │  Stingy — needs low/special price            │
+│  Bob       │  4  │   m    │  Laid-back, moderate                         │
+│  Klaus     │  6  │   m    │  Good payer                                  │
+│  Dieter    │  5  │   m    │  Medium                                      │
+│  Hans      │  3  │   m    │  Hesitant, low tolerance                     │
+│  Marco     │  7  │   m    │  High tolerance, good target for markup      │
+│  Tobias    │  5  │   m    │  Medium                                      │
+│  Felix     │  6  │   m    │  Good payer                                  │
+│  Patrick   │  8  │   m    │  Very tolerant, great for premium pricing    │
+│  Lukas     │  4  │   m    │  Moderate                                    │
+│  Tim       │  3  │   m    │  Low — use special price if needed           │
+│  Nico      │  2  │   m    │  Very stingy — needs discount                │
+│  Fatima    │  7  │   f    │  High tolerance (Joseph bonus applies)       │
+│  Sandra    │  6  │   f    │  Good payer                                  │
+│  Melanie   │  5  │   f    │  Medium                                      │
+│  Jessica   │  4  │   f    │  Moderate                                    │
+│  Petra     │  8  │   f    │  Very tolerant, premium target               │
+│  Anna      │  3  │   f    │  Low — may need discount                     │
+│  Leonie    │  6  │   f    │  Good payer                                  │
+│  Sabine    │  7  │   f    │  High tolerance                              │
+│  Ralf      │  3  │   m    │  Grumpy, refuses above base price            │
+│  Gerhard   │  4  │   m    │  Moderate                                    │
+└────────────┴─────┴────────┴──────────────────────────────────────────────┘
+
+Character tip:
+  Philipp gets a bonus with male customers — Stefan, Marco, Patrick etc. are ideal.
+  Joseph gets a bonus with female customers — Fatima, Petra, Sabine etc. are ideal.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 8 — WINNABLE CUSTOMERS (--contact-customer + --deliver-sample)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+These 11 customers are NOT in your pool by default. You must spend money to
+send them a sample, then deliver it to win them as permanent regulars.
+
+REQUIRES: Level 2+
+
+Step 1 — Send a sample (costs money):
+  python3 dummtopia_headless.py --contact-customer NAME
+
+Step 2 — Deliver the sample (when they show up):
+  python3 dummtopia_headless.py --deliver-sample NAME
+  OR
+  python3 dummtopia_headless.py --sell --customer NAME
+    (if they appear via --serve, delivering the sample happens automatically)
+
+Contact cost formula:  €20 + (WTP × 5)
+
+┌────────────┬─────┬────────┬──────────┬──────────┬──────────────────────────┐
+│  NAME      │ WTP │ GENDER │ CONTACT  │ WIN      │  NOTES                   │
+│            │     │        │ COST     │ CHANCE   │                          │
+├────────────┼─────┼────────┼──────────┼──────────┼──────────────────────────┤
+│  Stefanie  │  9  │   f    │  €65     │  90%     │  Easiest win, high WTP   │
+│  Ingrid    │  6  │   f    │  €50     │  85%     │  Very safe investment    │
+│  Erwin     │  7  │   m    │  €55     │  80%     │  Desperate, reliable     │
+│  Dietmar   │  9  │   m    │  €65     │  78%     │  Bodyguard, bulk buyer   │
+│  Claudia   │  8  │   f    │  €60     │  75%     │  Lawyer, wants regular   │
+│  Horst     │  6  │   m    │  €50     │  70%     │  Direct, price-focused   │
+│  Yara      │  7  │   f    │  €55     │  72%     │  Dancer, fair offers     │
+│  Dr_Müller │  9  │   m    │  €65     │  65%     │  Doctor, very discreet   │
+│  Natascha  │  8  │   f    │  €60     │  60%     │  Influencer, refers more │
+│  Markus    │  5  │   m    │  €45     │  50%     │  Journalist, risky       │
+│  Benjamin  │  3  │   m    │  €35     │  55%     │  Cheapest, lowest return │
+└────────────┴─────┴────────┴──────────┴──────────┴──────────────────────────┘
+
+Priority recommendation:
+  Start with Stefanie (90% win, WTP 9) — best ROI.
+  Then Ingrid or Erwin for safety.
+  Avoid Markus/Benjamin early — low win chance or low WTP.
+
+Once won, the customer joins your permanent pool and appears in --serve ticks
+and is available via --sell --customer NAME forever.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 9 — LEVELING UP (--upgrade)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  python3 dummtopia_headless.py --upgrade
+
+Levels: 1 → 2 → 3 (max). Requires money. Cost scales with level and drops
+if your average customer rating is high (high ratings = cheaper upgrades).
+Having done a rebirth also reduces upgrade cost by 30%.
+
+Approximate costs (no rebirth, average rating ~3.0):
+  Level 1 → 2:  ~€133
+  Level 2 → 3:  ~€503
+
+What each level unlocks:
+  Level 2:
+    - --buy premium (€35/unit, higher markup potential)
+    - --contact-customer (winnable customer system)
+    - Phone system (cosmetic, no mechanical effect in headless mode)
+
+  Level 3:
+    - --buy ultra (€75/unit, best margins)
+    - --buy-distraction (police interval upgrades)
+
+After upgrading, always run --status to confirm your new level.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 10 — DISTRACTION SHOP (--buy-distraction) [LEVEL 3 ONLY]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  python3 dummtopia_headless.py --buy-distraction "ITEM NAME"
+
+Increases the time between police checks. Default interval: 60–120 seconds.
+These stack — you can buy multiple items.
+
+┌──────────────────────┬──────┬─────────────────────────────────────────────┐
+│  ITEM NAME           │ COST │  EFFECT                                     │
+├──────────────────────┼──────┼─────────────────────────────────────────────┤
+│  Dummy-Kiosk         │ €150 │  +30s to minimum police interval            │
+│  Fake-Marktstand     │ €300 │  +60s to maximum police interval            │
+│  Bestechung          │ €500 │  +120s to BOTH min and max interval         │
+└──────────────────────┴──────┴─────────────────────────────────────────────┘
+
+Example: After buying Bestechung, police interval becomes 180–240s instead of
+60–120s. More time between checks = more selling time per session.
+
+Buying all three eventually gives very long police intervals, making
+inspections rare. Best investment once you can afford it at level 3.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 11 — REBIRTH SYSTEM (--rebirth + --rebirth-perk)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+REBIRTH (prestige reset):
+  python3 dummtopia_headless.py --rebirth
+
+Requirements: Must be at level 3.
+Effect: Resets level to 1, balance to €50, inventory to 2x normal.
+        Awards +3 rebirth points (RP).
+        Rebirth count increases by 1 (future upgrade costs drop 30%).
+
+Only do this when you've maxed level 3 and want the RP bonuses.
+Your won customers and customer ratings are preserved.
+
+─────────────────────────────────────────────────────────────────────────────
+
+REBIRTH PERKS — spend RP earned from rebirthing:
+  python3 dummtopia_headless.py --rebirth-perk "PERK NAME"
+
+┌──────────────────────────┬──────┬───────────────────────────────────────────┐
+│  PERK NAME               │  RP  │  EFFECT                                   │
+├──────────────────────────┼──────┼───────────────────────────────────────────┤
+│  Goldene Nase            │  1   │  All custom prices reduced by 10%         │
+│  VIP-Liste               │  2   │  +2 WTP for every customer permanently    │
+│  Korrupter Polizist      │  3   │  Police ignores you once (1 charge)       │
+│  Schwarzmarkt-Kontakt    │  5   │  Instantly unlock level 3 (ultra spray)   │
+└──────────────────────────┴──────┴───────────────────────────────────────────┘
+
+Notes:
+  "Goldene Nase" lowers your prices (good if you've been selling below base).
+  "VIP-Liste" is excellent — boosts sell chance across every customer.
+  "Korrupter Polizist" auto-protects one police check; charges stack.
+  "Schwarzmarkt-Kontakt" is only useful if you haven't reached level 3 yet.
+
+You get 3 RP per rebirth. "VIP-Liste" (2 RP) is usually the best first buy.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 12 — MAFIA LOAN SYSTEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BORROW:
+  python3 dummtopia_headless.py --mafia-borrow --amount 50
+
+  Max loan: €100. Only one loan at a time.
+  Deadline: 7 in-game days = 7 × day_length_seconds real time.
+  Default day length = 1200s, so deadline = 8400 seconds (~2.3 real hours).
+  If you don't repay in time: GAME OVER, save is wiped.
+
+FULL REPAY:
+  python3 dummtopia_headless.py --mafia-repay
+
+  Pays off the entire loan at once. Requires sufficient balance.
+
+PARTIAL REPAY:
+  python3 dummtopia_headless.py --mafia-repay-partial --amount 25
+
+  Reduces loan by the given amount. Loan deadline stays the same.
+  Use this to chip away at debt while keeping cash for stock.
+
+CHECK LOAN STATUS:
+  Run --status and look at the "loan" field:
+    "loan": {"amount": 50.0, "seconds_remaining": 7204}
+
+  If seconds_remaining < 600 (10 min), prioritize repayment immediately.
+  If seconds_remaining reaches 0 before repayment: save file is deleted.
+
+STRATEGY:
+  Only borrow if you need capital to buy stock for an immediate profit play.
+  Borrow €50–€80, buy stock, sell quickly, repay before deadline.
+  Never borrow if you already have an active loan.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 13 — POLICE INSPECTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Police arrive on a timer (default every 60–120 seconds of real time).
+When triggered during --serve, the game auto-hides your inventory to the stash.
+
+What happens during an inspection:
+  - If inventory is empty: quick check (5–15s), nothing found, no penalty.
+  - If inventory exists + "Korrupter Polizist" charge available:
+      charge consumed, no penalty, 10–20s inspection.
+  - Otherwise: ALL inventory auto-moved to hidden_stash. Inspection lasts 30–60s.
+      During inspection, no sales are possible.
+
+After inspection ends (on the next --serve tick):
+  - Stash is automatically returned to inventory.
+  - You can sell again.
+
+In --status, check:
+  "under_inspection": true/false
+  "inspection_ends_in": seconds remaining (null if not under inspection)
+
+If under_inspection is true, --sell will return an error. Wait for it to end
+by running --serve once or twice to process the end-of-inspection tick.
+
+NOTE: In headless mode there is no "bust" from auto-hide because the game
+hides everything instantly. You can only be busted in the original interactive
+mode where you fail the QTE. Headless is therefore safer than the original.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 14 — COMPLETE COMMAND REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+── SETUP ────────────────────────────────────────────────────────────────────
+
+  --init
+    Required before first use. Creates a new save file with default state.
+    Optional: --character [Philipp|Joseph]  (default: Philipp)
+    Optional: --name NAME                   (default: same as character)
+    Example:  --init --character Joseph --name DealerJoe
+
+  --reset
+    Deletes the save file entirely. Use if you want a full restart.
+    Does NOT require --init to have been run first.
+
+── INFORMATION ──────────────────────────────────────────────────────────────
+
+  --status
+    Full JSON state snapshot. Run this first every session.
+
+  --inventory
+    Current inventory and stash with prices. Shorter than --status.
+
+  --customers
+    All customers: WTP, gender, won/pending/available status.
+
+── STOCK ────────────────────────────────────────────────────────────────────
+
+  --buy TYPE --qty N
+    Buy N units of TYPE spray. Deducted from balance immediately.
+    Types: normal (€15) | menthol (€22) | premium (€35, lv2) | ultra (€75, lv3)
+    Example: --buy normal --qty 5
+
+  --set-price TYPE --price VALUE
+    Set your sell price for a spray type. Persists across sessions.
+    Returns sell chance preview for WTP 2, 5, and 9.
+    Example: --set-price normal --price 18.0
+
+── SELLING ──────────────────────────────────────────────────────────────────
+
+  --serve
+    Simulate one random game tick (customer visit or police check).
+    Optional: --ticks N  to run N ticks at once (default 1).
+    Example: --serve --ticks 10
+
+  --sell --customer NAME
+    Directly sell to a named customer using your set price.
+    Optional: --special-price VALUE  to override price for this sale only.
+    Customer must be in unlocked_customers or won_customers.
+    Example: --sell --customer Stefan
+    Example: --sell --customer Ralf --special-price 14.0
+
+── CUSTOMER EXPANSION ───────────────────────────────────────────────────────
+
+  --contact-customer NAME
+    Pay to send a sample to a winnable customer. Requires level 2.
+    Cost = €20 + (WTP × 5). Customer goes into pending_samples.
+    Example: --contact-customer Stefanie  (costs €65)
+
+  --deliver-sample NAME
+    Deliver a pending sample to roll for winning the customer.
+    Can also use --sell --customer NAME if they appear in a --serve tick.
+    Example: --deliver-sample Stefanie
+
+── PROGRESSION ──────────────────────────────────────────────────────────────
+
+  --upgrade
+    Pay to advance from current level to next (1→2 or 2→3).
+    Cost depends on your level and average customer rating.
+    Fails with error if insufficient balance.
+
+  --rebirth
+    Requires level 3. Resets to level 1 + €50 + 2x normal in exchange for
+    +3 rebirth points. Unlock cost reduced 30% on future runs.
+
+  --rebirth-perk "PERK NAME"
+    Spend rebirth points. Perk name must be exact (use quotes):
+      "Goldene Nase"          1 RP  — prices -10%
+      "VIP-Liste"             2 RP  — +2 WTP all customers
+      "Korrupter Polizist"    3 RP  — 1x police skip charge
+      "Schwarzmarkt-Kontakt"  5 RP  — instant level 3
+
+  --buy-distraction "ITEM NAME"
+    Requires level 3. Increases police check intervals.
+      "Dummy-Kiosk"       €150  — +30s min interval
+      "Fake-Marktstand"   €300  — +60s max interval
+      "Bestechung"        €500  — +120s both intervals
+
+── MAFIA ─────────────────────────────────────────────────────────────────────
+
+  --mafia-borrow --amount N
+    Borrow up to €100 from the mafia. Must be repaid within ~2.3 real hours.
+    Game over (save wiped) if deadline passes unpaid.
+    Example: --mafia-borrow --amount 80
+
+  --mafia-repay
+    Repay the entire active loan. Requires enough balance.
+
+  --mafia-repay-partial --amount N
+    Repay part of the loan. Deadline does not extend.
+    Example: --mafia-repay-partial --amount 30
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 15 — RECOMMENDED AGENT STRATEGY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EARLY GAME (Level 1):
+  1. --init --character Philipp  (or Joseph if you prefer female customers)
+  2. --set-price normal --price 17  (safe markup, ~95% on most customers)
+  3. --set-price menthol --price 25
+  4. --buy normal --qty 5
+  5. --serve --ticks 20
+  6. Repeat steps 4–5 until balance > €150
+  7. --upgrade  (to level 2)
+
+MID GAME (Level 2):
+  1. --buy premium --qty 3
+  2. --set-price premium --price 40
+  3. --contact-customer Stefanie  (best value winnable customer)
+  4. --serve --ticks 10 until Stefanie appears, then --deliver-sample Stefanie
+  5. Accumulate ~€550 for level 3 upgrade
+  6. --upgrade  (to level 3)
+
+LATE GAME (Level 3):
+  1. --buy ultra --qty 2
+  2. --set-price ultra --price 88
+  3. --buy-distraction "Bestechung"  (if balance allows)
+  4. Win more high-WTP customers (Dietmar, Dr_Müller, Petra, Fatima)
+  5. Grind to level 3 max, then --rebirth for RP
+  6. --rebirth-perk "VIP-Liste"  (best RP spend)
+
+LOAN PLAY (optional):
+  If balance is low but you need stock:
+  1. --mafia-borrow --amount 60
+  2. --buy normal --qty 4
+  3. --serve --ticks 15
+  4. --mafia-repay
+  Net profit if all 4 sell at €18: €72 revenue, €60 repaid = €12+ gain plus
+  whatever you had before.
+
+ALWAYS:
+  - Check --status before every session to see loan countdown
+  - Never let loan seconds_remaining drop below 600 without repaying
+  - Keep at least one item in inventory or --serve ticks become wasteful
+  - Prioritize upgrading over hoarding cash — each level unlocks better margins
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECTION 16 — ERROR HANDLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All errors return:  {"ok": false, "error": "...", "details": {...}}
+
+Common errors and how to fix them:
+
+  "Game not initialized. Run --init first."
+    → Run --init before any other command.
+
+  "Not enough money. Need €X, have €Y."
+    → Sell more before buying. Or use --mafia-borrow if desperate.
+
+  "Premium Nasenspray requires level 2."
+    → Run --upgrade first.
+
+  "Customer 'X' not available."
+    → Check --customers. They may need to be won via --contact-customer first.
+
+  "No pending sample for 'X'."
+    → Run --contact-customer X before --deliver-sample X.
+
+  "Already have an active loan."
+    → Repay with --mafia-repay before borrowing again.
+
+  "Currently under police inspection."
+    → Run --serve once to let the inspection expire, then retry --sell.
+
+  "Not enough RP."
+    → Do a --rebirth to earn more RP (requires level 3).
+
+  "Unknown perk 'X'."
+    → Use the exact perk name in quotes from Section 11. Case-sensitive.
+
+================================================================================
+  END OF GUIDE
+================================================================================
