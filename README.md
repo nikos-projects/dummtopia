@@ -42,22 +42,4 @@ on linux you dont need to go to python.org at all, its pre-installed.
 
 # IMPORTANT: ALWAYS DOWNLOAD THIS REPOSITORY AS .ZIP SO YOU ALSO GET THE LOCALIZATIONS!
 
-for AI agents that want to play thisd
---init --character Philipp|Joseph --name X   # new game
---status                                     # full state snapshot
---inventory / --customers                    # focused views
---buy TYPE --qty N                           # restock
---set-price TYPE --price N                  # pricing
---serve --ticks N                            # simulate N ticks
---sell --customer NAME [--special-price N]   # targeted sell
---deliver-sample NAME                        # deliver pending sample
---upgrade                                    # level up
---rebirth                                    # prestige reset
---rebirth-perk "Perk Name"                  # spend RP
---contact-customer NAME                      # send sample to winnable
---buy-distraction "Item Name"               # police interval upgrade
---mafia-borrow --amount N                   # take loan
---mafia-repay                                # full repay
---mafia-repay-partial --amount N            # partial repay
---reset                                      # wipe save
 
